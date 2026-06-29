@@ -98,6 +98,13 @@ export default function App() {
         </header>
 
         <SpectatorPanel modalidade={viewMode} eventID={eventID} />
+        
+        {/* FOOTER CRÉDITO */}
+        <footer className="mt-8 py-6 border-t border-slate-900 text-center">
+          <p className="text-xs text-slate-500 font-medium tracking-wider">
+            Idealizado por <span className="text-slate-400 font-bold">Abel Hammes</span>
+          </p>
+        </footer>
       </div>
     );
   }
@@ -112,6 +119,13 @@ export default function App() {
           isOnline={isOnline} 
           setIsOnline={setIsOnline} 
         />
+
+        {/* FOOTER CRÉDITO */}
+        <footer className="mt-8 py-6 border-t border-slate-900 text-center">
+          <p className="text-xs text-slate-500 font-medium tracking-wider">
+            Idealizado por <span className="text-slate-400 font-bold">Abel Hammes</span>
+          </p>
+        </footer>
       </div>
     );
   }
@@ -215,6 +229,11 @@ export default function App() {
               Estados
             </button>
           </div>
+        </div>
+
+        {/* IDEALIZADO POR ABEL HAMMES */}
+        <div className="text-center mt-6 pt-3 border-t border-slate-800/40 text-xs text-slate-500 font-medium">
+          Idealizado por <span className="text-slate-400 font-bold">Abel Hammes</span>
         </div>
       </div>
     </div>

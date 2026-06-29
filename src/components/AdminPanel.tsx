@@ -23,17 +23,7 @@ import {
 import { CampeonatoData, Atleta, Modalidade, PontosConfig, EquipeRanking } from '../types';
 import { salvarCampeonato, escutarCampeonato } from '../firebase';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
-
-// Adiciona declaração de tipo para jspdf-autotable no escopo do arquivo
-declare module 'jspdf' {
-  interface jsPDF {
-    autoTable: any;
-    lastAutoTable: {
-      finalY: number;
-    };
-  }
-}
+import autoTable from 'jspdf-autotable';
 
 interface AdminPanelProps {
   eventID: string;
@@ -207,6 +197,72 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
     const next = { ...campeonatos };
     next[modalidade].pontos.participacao = valor;
     saveState(next, modalidade);
+  };
+
+  // Funções de Backup (Exportar/Importar)
+  const exportBackupCompleto = () => {
+    const dataStr = JSON.stringify(campeonatos, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `backup_completo_bmx_${eventID || 'campeonato'}_${dateStr}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportBackupIndividual = () => {
+    const dataStr = JSON.stringify(campeonatos[modalidade], null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `backup_${modalidade}_bmx_${eventID || 'campeonato'}_${dateStr}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        
+        // Validação: Backup Completo (3 modalidades)
+        if (parsed && typeof parsed === 'object' && ('clube' in parsed || 'equipe' in parsed || 'estado' in parsed)) {
+          if (confirm("Este é um arquivo de backup completo (com as 3 modalidades). Isso substituirá todos os dados atuais locais e no banco de dados. Deseja continuar?")) {
+            const newCampeonatos = {
+              clube: sanitizeCampeonatoData(parsed.clube, 'clube'),
+              equipe: sanitizeCampeonatoData(parsed.equipe, 'equipe'),
+              estado: sanitizeCampeonatoData(parsed.estado, 'estado')
+            };
+            await saveState(newCampeonatos);
+            alert("Backup completo importado com sucesso para todas as modalidades!");
+          }
+        } 
+        // Validação: Backup Individual (única modalidade)
+        else if (parsed && typeof parsed === 'object' && ('config' in parsed || 'categorias' in parsed || 'atletas' in parsed)) {
+          if (confirm(`Este é um arquivo de backup individual. Deseja importar esses dados para a modalidade ativa atualmente (${modalidade.toUpperCase()})?`)) {
+            const next = { ...campeonatos };
+            next[modalidade] = sanitizeCampeonatoData(parsed, modalidade);
+            await saveState(next, modalidade);
+            alert(`Backup importado com sucesso para a modalidade ${modalidade.toUpperCase()}!`);
+          }
+        } else {
+          alert("Formato de arquivo de backup inválido. Certifique-se de carregar um arquivo de backup .json gerado por este sistema.");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("Erro ao ler o arquivo de backup. Certifique-se de que é um arquivo JSON válido.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // reseta o input
   };
 
   // Manipulação de Categorias
@@ -468,7 +524,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
         ];
       });
 
-      doc.autoTable({
+      autoTable(doc, {
         startY: currentY,
         margin: { left: 15, right: 15 },
         head: [['Atleta (Categoria)', 'Placa', 'Motos', 'Eliminatórias', 'Final', 'Subtotal']],
@@ -477,17 +533,16 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
         styles: { fontSize: 8, cellPadding: 2, font: 'helvetica' },
         headStyles: { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: 'bold' },
         columnStyles: {
-          0: { cellWidth: 70 },
+          0: { cellWidth: 80 },
           1: { cellWidth: 15, halign: 'center' },
-          2: { cellWidth: 18, halign: 'center' },
+          2: { cellWidth: 20, halign: 'center' },
           3: { cellWidth: 23, halign: 'center' },
-          4: { cellWidth: 18, halign: 'center' },
-          5: { cellWidth: 15, halign: 'center' },
-          6: { cellWidth: 21, halign: 'right', fontStyle: 'bold' }
+          4: { cellWidth: 20, halign: 'center' },
+          5: { cellWidth: 22, halign: 'right', fontStyle: 'bold' }
         }
       });
 
-      currentY = doc.lastAutoTable.finalY + 8;
+      currentY = (doc as any).lastAutoTable.finalY + 8;
     });
 
     doc.save(`bmx_live_${modalidade}_${eventID || 'campeonato'}.pdf`);
@@ -703,47 +758,94 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
           {/* ABA 1: CONFIGURAÇÃO */}
           {activeTab === 'config' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* TERMINOLOGIA E PONTOS */}
-              <div className="bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-850 flex flex-col justify-between">
-                <div>
+              {/* COLUNA 1: CONFIGURAÇÃO & BACKUP */}
+              <div className="space-y-6">
+                {/* TERMINOLOGIA E PONTOS */}
+                <div className="bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-850 flex flex-col justify-between">
+                  <div>
+                    <h3 className="font-black text-white italic uppercase text-sm mb-4 font-display flex items-center gap-2">
+                      <Flag className="text-emerald-500 w-4 h-4" />
+                      Terminologia do Campeonato
+                    </h3>
+                    <p className="text-xs text-slate-400 mb-4">Escolha como quer chamar a entidade principal neste campeonato específico:</p>
+                    <div className="flex flex-wrap gap-2 mb-6">
+                      {['EQUIPE', 'CLUBE', 'ESTADO', 'DELEGAÇÃO'].map(t => (
+                        <button 
+                          key={t}
+                          onClick={() => setTermo(t)}
+                          className={`px-4 py-2 rounded-xl text-xs font-bold uppercase cursor-pointer transition ${
+                            currentData.config.termo === t 
+                              ? 'bg-gradient-to-r from-emerald-600 to-yellow-500 text-white' 
+                              : 'bg-slate-950 text-slate-400 border border-slate-850 hover:bg-slate-800'
+                          }`}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+
+                    <h3 className="font-black text-white italic uppercase text-sm mb-4 font-display flex items-center gap-2 border-t border-slate-800 pt-5">
+                      <Award className="text-yellow-500 w-4 h-4" />
+                      Tabela de Pontos por Posição na Final
+                    </h3>
+                    <p className="text-xs text-slate-400 mb-4">Modifique os pontos atribuídos aos pilotos conforme as posições finais:</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-4">
+                      {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
+                        <div key={i} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-center">
+                          <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{i}º LUGAR</label>
+                          <input 
+                            type="number" 
+                            value={currentData.pontos[i] || 0}
+                            onChange={(e) => setPontoValue(i, Number(e.target.value))}
+                            className="bg-transparent text-sm font-black text-yellow-400 text-center w-full outline-none font-mono"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* SEGURANÇA E BACKUPS */}
+                <div className="bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-850">
                   <h3 className="font-black text-white italic uppercase text-sm mb-4 font-display flex items-center gap-2">
-                    <Flag className="text-emerald-500 w-4 h-4" />
-                    Terminologia do Campeonato
+                    <Database className="text-emerald-500 w-4 h-4" />
+                    Cópia de Segurança & Restauração (Backup)
                   </h3>
-                  <p className="text-xs text-slate-400 mb-4">Escolha como quer chamar a entidade principal neste campeonato específico:</p>
-                  <div className="flex flex-wrap gap-2 mb-6">
-                    {['EQUIPE', 'CLUBE', 'ESTADO', 'DELEGAÇÃO'].map(t => (
-                      <button 
-                        key={t}
-                        onClick={() => setTermo(t)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold uppercase cursor-pointer transition ${
-                          currentData.config.termo === t 
-                            ? 'bg-gradient-to-r from-emerald-600 to-yellow-500 text-white' 
-                            : 'bg-slate-950 text-slate-400 border border-slate-850 hover:bg-slate-800'
-                        }`}
-                      >
-                        {t}
-                      </button>
-                    ))}
+                  <p className="text-xs text-slate-400 mb-4">
+                    Garante integridade e proteção máxima para eventos nacionais. Salve cópias de segurança de rotina locais em formato JSON e restaure-as a qualquer momento.
+                  </p>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                    <button 
+                      onClick={exportBackupIndividual}
+                      className="bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-4 py-3 rounded-xl font-bold text-xs uppercase flex items-center justify-center gap-2 transition cursor-pointer"
+                    >
+                      <Download className="w-4 h-4 text-emerald-500" />
+                      Backup ({modalidade.toUpperCase()})
+                    </button>
+                    <button 
+                      onClick={exportBackupCompleto}
+                      className="bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 px-4 py-3 rounded-xl font-bold text-xs uppercase flex items-center justify-center gap-2 transition cursor-pointer"
+                    >
+                      <Download className="w-4 h-4 text-emerald-400" />
+                      Backup Geral (Completo)
+                    </button>
                   </div>
 
-                  <h3 className="font-black text-white italic uppercase text-sm mb-4 font-display flex items-center gap-2 border-t border-slate-800 pt-5">
-                    <Award className="text-yellow-500 w-4 h-4" />
-                    Tabela de Pontos por Posição na Final
-                  </h3>
-                  <p className="text-xs text-slate-400 mb-4">Modifique os pontos atribuídos aos pilotos conforme as posições finais:</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-4">
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
-                      <div key={i} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-center">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{i}º LUGAR</label>
+                  <div className="border-t border-slate-800/60 pt-4">
+                    <label className="text-xs font-bold text-slate-400 block mb-2">Importar arquivo de Backup (.json)</label>
+                    <div className="flex items-center gap-2">
+                      <label className="flex-1 bg-slate-950 border border-slate-800 hover:border-yellow-500 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-400 flex items-center justify-center gap-2 transition cursor-pointer">
+                        <Upload className="w-4 h-4 text-yellow-500" />
+                        <span>Selecionar Arquivo JSON</span>
                         <input 
-                          type="number" 
-                          value={currentData.pontos[i] || 0}
-                          onChange={(e) => setPontoValue(i, Number(e.target.value))}
-                          className="bg-transparent text-sm font-black text-yellow-400 text-center w-full outline-none font-mono"
+                          type="file" 
+                          accept=".json"
+                          onChange={handleImportBackup}
+                          className="hidden" 
                         />
-                      </div>
-                    ))}
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
