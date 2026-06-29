@@ -104,23 +104,16 @@ export default function SpectatorPanel({ modalidade, eventID }: SpectatorPanelPr
       const contagem: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0 };
 
       pilotos.forEach(p => {
-        let participouNoCampeonato = false;
-        
         FASES.forEach(f => {
           // @ts-ignore
           const pos = Number(p[f]);
           if (pos > 0) {
-            participouNoCampeonato = true;
             total += getPts(pos);
             if (pos >= 1 && pos <= 8) {
               contagem[pos] = (contagem[pos] || 0) + 1;
             }
           }
         });
-
-        if (participouNoCampeonato) {
-          total += Number(data.pontos.participacao) || 0;
-        }
       });
 
       return { nome, total, pilotos, contagem };
@@ -406,8 +399,7 @@ export default function SpectatorPanel({ modalidade, eventID }: SpectatorPanelPr
                                 <th className="p-2.5 text-center">Motos</th>
                                 <th className="p-2.5 text-center">Elims</th>
                                 <th className="p-2.5 text-center">Final</th>
-                                <th className="p-2.5 text-center">Part.</th>
-                                <th className="p-2.5 text-right pr-4">Subtotal</th>
+                                <th className="p-2.5 text-right pr-4">Total</th>
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-slate-900">
@@ -415,8 +407,7 @@ export default function SpectatorPanel({ modalidade, eventID }: SpectatorPanelPr
                                 const mPts = getPts(p.m1) + getPts(p.m2) + getPts(p.m3);
                                 const fPts = getPts(p.f32) + getPts(p.f16) + getPts(p.f8) + getPts(p.qta) + getPts(p.semi);
                                 const finalPts = getPts(p.final);
-                                const extra = p.m1 > 0 || p.m2 > 0 || p.m3 > 0 || p.f32 > 0 || p.f16 > 0 || p.f8 > 0 || p.qta > 0 || p.semi > 0 || p.final > 0 ? (Number(data.pontos.participacao) || 0) : 0;
-                                const totalPiloto = mPts + fPts + finalPts + extra;
+                                const totalPiloto = mPts + fPts + finalPts;
 
                                 return (
                                   <tr key={p.id} className="hover:bg-slate-900/30">
@@ -426,7 +417,6 @@ export default function SpectatorPanel({ modalidade, eventID }: SpectatorPanelPr
                                     <td className="p-2.5 text-center font-mono font-medium text-slate-500">{mPts} pts</td>
                                     <td className="p-2.5 text-center font-mono font-medium text-slate-500">{fPts} pts</td>
                                     <td className="p-2.5 text-center font-mono font-bold text-slate-300">{finalPts} pts</td>
-                                    <td className="p-2.5 text-center font-mono font-medium text-slate-500">+{extra}</td>
                                     <td className="p-2.5 text-right pr-4 font-mono font-black text-blue-400">{totalPiloto} pts</td>
                                   </tr>
                                 );

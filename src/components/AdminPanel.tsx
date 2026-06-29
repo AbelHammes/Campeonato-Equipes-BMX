@@ -51,7 +51,7 @@ const DEFAULT_PONTOS: PontosConfig = {
   6: 10,
   7: 8,
   8: 6,
-  participacao: 1
+  participacao: 0
 };
 
 const DEFAULT_CATEGORIAS = [
@@ -329,23 +329,16 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
       const contagem: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0 };
 
       pilotos.forEach(p => {
-        let participouNoCampeonato = false;
-        
         FASES.forEach(f => {
           // @ts-ignore
           const pos = Number(p[f]);
           if (pos > 0) {
-            participouNoCampeonato = true;
             total += getPts(pos);
             if (pos >= 1 && pos <= 8) {
               contagem[pos] = (contagem[pos] || 0) + 1;
             }
           }
         });
-
-        if (participouNoCampeonato) {
-          total += Number(currentData.pontos.participacao) || 0;
-        }
       });
 
       return { nome, total, pilotos, contagem };
@@ -463,8 +456,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
         const mPts = getPts(p.m1) + getPts(p.m2) + getPts(p.m3);
         const fPts = getPts(p.f32) + getPts(p.f16) + getPts(p.f8) + getPts(p.qta) + getPts(p.semi);
         const finalPts = getPts(p.final);
-        const extra = p.m1 > 0 || p.m2 > 0 || p.m3 > 0 || p.f32 > 0 || p.f16 > 0 || p.f8 > 0 || p.qta > 0 || p.semi > 0 || p.final > 0 ? (Number(currentData.pontos.participacao) || 0) : 0;
-        const totalP = mPts + fPts + finalPts + extra;
+        const totalP = mPts + fPts + finalPts;
 
         return [
           `${p.nome} (${p.cat})`,
@@ -472,7 +464,6 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
           `${mPts} pts`,
           `${fPts} pts`,
           `${finalPts} pts`,
-          extra ? `+${extra}` : '0',
           `${totalP} pts`
         ];
       });
@@ -480,7 +471,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
       doc.autoTable({
         startY: currentY,
         margin: { left: 15, right: 15 },
-        head: [['Atleta (Categoria)', 'Placa', 'Motos', 'Eliminatórias', 'Final', 'Part.', 'Subtotal']],
+        head: [['Atleta (Categoria)', 'Placa', 'Motos', 'Eliminatórias', 'Final', 'Subtotal']],
         body: rows,
         theme: 'striped',
         styles: { fontSize: 8, cellPadding: 2, font: 'helvetica' },
@@ -754,17 +745,6 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
                       </div>
                     ))}
                   </div>
-                </div>
-
-                <div className="bg-blue-950/30 border border-blue-900/60 p-4 rounded-xl">
-                  <label className="block text-[10px] font-black text-blue-400 uppercase mb-1">Pontos Extra por Participação Geral</label>
-                  <p className="text-[11px] text-slate-400 mb-2">Pontuação somada automaticamente para qualquer atleta que dispute pelo menos uma corrida.</p>
-                  <input 
-                    type="number" 
-                    value={currentData.pontos.participacao || 0}
-                    onChange={(e) => setParticipacaoValue(Number(e.target.value))}
-                    className="w-full bg-slate-950 border border-slate-800 p-2.5 rounded-lg font-black text-center text-yellow-400 font-mono outline-none"
-                  />
                 </div>
               </div>
 
@@ -1120,7 +1100,6 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
                             <th className="p-3 text-center">Motos</th>
                             <th className="p-3 text-center">Eliminatórias</th>
                             <th className="p-3 text-center">Final</th>
-                            <th className="p-3 text-center">Part.</th>
                             <th className="p-3 text-right pr-5">Total</th>
                           </tr>
                         </thead>
@@ -1129,8 +1108,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
                             const mPts = getPts(p.m1) + getPts(p.m2) + getPts(p.m3);
                             const fPts = getPts(p.f32) + getPts(p.f16) + getPts(p.f8) + getPts(p.qta) + getPts(p.semi);
                             const finalPts = getPts(p.final);
-                            const extra = p.m1 > 0 || p.m2 > 0 || p.m3 > 0 || p.f32 > 0 || p.f16 > 0 || p.f8 > 0 || p.qta > 0 || p.semi > 0 || p.final > 0 ? (Number(currentData.pontos.participacao) || 0) : 0;
-                            const totalPiloto = mPts + fPts + finalPts + extra;
+                            const totalPiloto = mPts + fPts + finalPts;
 
                             return (
                               <tr key={p.id} className="hover:bg-slate-900/30">
@@ -1140,7 +1118,6 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
                                 <td className="p-3 text-center font-mono font-bold text-slate-400">{mPts} pts</td>
                                 <td className="p-3 text-center font-mono font-bold text-slate-400">{fPts} pts</td>
                                 <td className="p-3 text-center font-mono font-bold text-slate-200">{finalPts} pts</td>
-                                <td className="p-3 text-center font-mono font-bold text-slate-400">+{extra}</td>
                                 <td className="p-3 text-right pr-5 font-mono font-black text-blue-400 text-[13px]">{totalPiloto} pts</td>
                               </tr>
                             );
