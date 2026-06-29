@@ -1,0 +1,6 @@
+{
+  "name": "BMX Live Pro",
+  "description": "Sistema oficial para gerenciamento em tempo real de campeonatos de BMX por Clube, Equipe e Estado.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
