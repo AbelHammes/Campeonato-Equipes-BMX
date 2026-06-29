@@ -31,12 +31,35 @@ export default function SpectatorPanel({ modalidade, eventID }: SpectatorPanelPr
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedEquipe, setExpandedEquipe] = useState<string | null>(null);
 
+  // Função utilitária para higienizar dados e blindar o painel espectador contra TypeErrors e telas pretas
+  const sanitizeCampeonatoData = (incoming: any, mod: Modalidade): CampeonatoData => {
+    const defaultTermos: Record<Modalidade, string> = {
+      clube: 'CLUBE',
+      equipe: 'EQUIPE',
+      estado: 'ESTADO'
+    };
+    return {
+      config: {
+        termo: incoming?.config?.termo || defaultTermos[mod],
+        eventID: incoming?.config?.eventID || '',
+        travado: typeof incoming?.config?.travado === 'boolean' ? incoming.config.travado : false,
+        modalidade: mod,
+      },
+      categorias: Array.isArray(incoming?.categorias) ? incoming.categorias : [],
+      atletas: Array.isArray(incoming?.atletas) ? incoming.atletas : [],
+      pontos: {
+        ...DEFAULT_PONTOS,
+        ...(incoming?.pontos || {})
+      }
+    };
+  };
+
   // Escuta dados em tempo real da modalidade correspondente via Firebase
   useEffect(() => {
     setLoading(true);
     const unsubscribe = escutarCampeonato(eventID || 'default', modalidade, (firebaseData) => {
       if (firebaseData) {
-        setData(firebaseData);
+        setData(sanitizeCampeonatoData(firebaseData, modalidade));
       } else {
         // Se não houver dados no Firebase ainda, tenta recuperar do localStorage
         const saved = localStorage.getItem(`bmx_championships_v1`);
@@ -44,7 +67,7 @@ export default function SpectatorPanel({ modalidade, eventID }: SpectatorPanelPr
           try {
             const all = JSON.parse(saved);
             if (all[modalidade]) {
-              setData(all[modalidade]);
+              setData(sanitizeCampeonatoData(all[modalidade], modalidade));
             }
           } catch (e) {
             console.error("Erro ao ler localStorage:", e);
@@ -153,9 +176,12 @@ export default function SpectatorPanel({ modalidade, eventID }: SpectatorPanelPr
   return (
     <div className="max-w-7xl mx-auto px-4 py-4 md:py-8">
       {/* CARD DO PLACAR AO VIVO */}
-      <div className="bg-gradient-to-r from-slate-900 to-slate-950 border border-slate-800 p-5 rounded-3xl shadow-2xl flex flex-col md:flex-row justify-between items-center gap-4 mb-8">
+      <div className="bg-gradient-to-r from-slate-900 to-slate-950 border border-emerald-950 p-5 rounded-3xl shadow-2xl flex flex-col md:flex-row justify-between items-center gap-4 mb-8 relative overflow-hidden">
+        {/* Linha decorativa de alta costura com as cores do Brasil */}
+        <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-emerald-600 via-yellow-400 to-blue-600" />
+        
         <div className="flex items-center gap-3">
-          <div className="bg-yellow-500 text-slate-950 p-3 rounded-2xl">
+          <div className="bg-gradient-to-br from-emerald-500 to-yellow-400 text-slate-950 p-3 rounded-2xl shadow-md">
             {getModalidadeIcon()}
           </div>
           <div>
@@ -203,13 +229,13 @@ export default function SpectatorPanel({ modalidade, eventID }: SpectatorPanelPr
             </h3>
           </div>
 
-          <div className="flex flex-col md:flex-row items-end justify-center gap-4 max-w-4xl mx-auto px-4">
+          <div className="flex flex-col md:flex-row items-center md:items-end justify-center gap-6 md:gap-4 max-w-4xl mx-auto px-4">
             {podioExibicao.map((ent) => {
               const isFirst = ent.posicao === 1;
               const isSecond = ent.posicao === 2;
               const isThird = ent.posicao === 3;
 
-              // Cores e tamanhos dependendo da posição
+              // Cores e tamanhos dependendo da posição, adaptados para o Brasil layout
               let cardBg = "bg-slate-900 border-slate-800";
               let medalBg = "bg-slate-800 text-slate-300";
               let height = "h-48 md:h-56";
@@ -218,15 +244,15 @@ export default function SpectatorPanel({ modalidade, eventID }: SpectatorPanelPr
               if (isFirst) {
                 cardBg = "bg-gradient-to-b from-yellow-950/40 to-slate-950 border-yellow-500/50 shadow-yellow-500/10";
                 medalBg = "bg-yellow-500 text-slate-950 animate-bounce";
-                height = "h-60 md:h-72 order-1 md:order-2 z-10 scale-[1.05]";
+                height = "h-56 md:h-72 order-1 md:order-2 z-10 scale-[1.03] md:scale-[1.05]";
                 glowColor = "shadow-[0_0_30px_rgba(234,179,8,0.15)]";
               } else if (isSecond) {
-                cardBg = "bg-gradient-to-b from-slate-900/60 to-slate-950 border-slate-400/30";
-                medalBg = "bg-slate-300 text-slate-950";
-                height = "h-52 md:h-60 order-2 md:order-1";
+                cardBg = "bg-gradient-to-b from-emerald-950/20 to-slate-950 border-emerald-500/30";
+                medalBg = "bg-emerald-500 text-slate-950 font-black";
+                height = "h-48 md:h-60 order-2 md:order-1";
               } else if (isThird) {
-                cardBg = "bg-gradient-to-b from-amber-950/30 to-slate-950 border-amber-700/30";
-                medalBg = "bg-amber-700 text-white";
+                cardBg = "bg-gradient-to-b from-blue-950/25 to-slate-950 border-blue-500/30";
+                medalBg = "bg-blue-600 text-white";
                 height = "h-44 md:h-48 order-3";
               }
 
@@ -236,7 +262,7 @@ export default function SpectatorPanel({ modalidade, eventID }: SpectatorPanelPr
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, delay: ent.posicao * 0.15 }}
-                  className={`w-full md:w-1/3 rounded-[2.5rem] border p-6 flex flex-col justify-between relative overflow-hidden shadow-2xl ${cardBg} ${height} ${glowColor}`}
+                  className={`w-full max-w-sm md:w-1/3 rounded-[2.5rem] border p-6 flex flex-col justify-between relative overflow-hidden shadow-2xl ${cardBg} ${height} ${glowColor}`}
                 >
                   {/* BRILHO DE LUZ NO FUNDO DO PRIMEIRO LUGAR */}
                   {isFirst && (

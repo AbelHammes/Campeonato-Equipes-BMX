@@ -89,12 +89,40 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
     }
   });
 
+  // Função utilitária para garantir consistência e evitar que propriedades indefinidas vindas do Firebase crashem o app
+  const sanitizeCampeonatoData = (incoming: any, mod: Modalidade): CampeonatoData => {
+    const defaultTermos: Record<Modalidade, string> = {
+      clube: 'CLUBE',
+      equipe: 'EQUIPE',
+      estado: 'ESTADO'
+    };
+    return {
+      config: {
+        termo: incoming?.config?.termo || defaultTermos[mod],
+        eventID: incoming?.config?.eventID || '',
+        travado: typeof incoming?.config?.travado === 'boolean' ? incoming.config.travado : false,
+        modalidade: mod,
+      },
+      categorias: Array.isArray(incoming?.categorias) ? incoming.categorias : [...DEFAULT_CATEGORIAS],
+      atletas: Array.isArray(incoming?.atletas) ? incoming.atletas : [],
+      pontos: {
+        ...DEFAULT_PONTOS,
+        ...(incoming?.pontos || {})
+      }
+    };
+  };
+
   // Carregar dados locais ao iniciar
   useEffect(() => {
     const saved = localStorage.getItem(`bmx_championships_v1`);
     if (saved) {
       try {
-        setCampeonatos(JSON.parse(saved));
+        const parsed = JSON.parse(saved);
+        setCampeonatos({
+          clube: sanitizeCampeonatoData(parsed.clube, 'clube'),
+          equipe: sanitizeCampeonatoData(parsed.equipe, 'equipe'),
+          estado: sanitizeCampeonatoData(parsed.estado, 'estado')
+        });
       } catch (e) {
         console.error("Erro ao ler do localStorage:", e);
       }
@@ -105,22 +133,22 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
   useEffect(() => {
     if (!isOnline || !eventID) return;
 
-    // Escuta em tempo real cada uma das 3 modalidades
+    // Escuta em tempo real cada uma das 3 modalidades com sanitização rigorosa contra crash
     const unsubclube = escutarCampeonato(eventID, 'clube', (data) => {
       if (data) {
-        setCampeonatos(prev => ({ ...prev, clube: data }));
+        setCampeonatos(prev => ({ ...prev, clube: sanitizeCampeonatoData(data, 'clube') }));
       }
     });
 
     const unsubequipe = escutarCampeonato(eventID, 'equipe', (data) => {
       if (data) {
-        setCampeonatos(prev => ({ ...prev, equipe: data }));
+        setCampeonatos(prev => ({ ...prev, equipe: sanitizeCampeonatoData(data, 'equipe') }));
       }
     });
 
     const unsubestado = escutarCampeonato(eventID, 'estado', (data) => {
       if (data) {
-        setCampeonatos(prev => ({ ...prev, estado: data }));
+        setCampeonatos(prev => ({ ...prev, estado: sanitizeCampeonatoData(data, 'estado') }));
       }
     });
 
@@ -131,16 +159,22 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
     };
   }, [isOnline, eventID]);
 
-  // Função central para salvar dados localmente e no Firebase
-  const saveState = async (updated: Record<Modalidade, CampeonatoData>) => {
+  // Função central otimizada: salva localmente e no Firebase (apenas a modalidade alterada para evitar conflito/concorrência)
+  const saveState = async (updated: Record<Modalidade, CampeonatoData>, targetMod?: Modalidade) => {
     setCampeonatos(updated);
     localStorage.setItem(`bmx_championships_v1`, JSON.stringify(updated));
 
     if (isOnline && eventID) {
       try {
-        await salvarCampeonato(eventID, 'clube', updated.clube);
-        await salvarCampeonato(eventID, 'equipe', updated.equipe);
-        await salvarCampeonato(eventID, 'estado', updated.estado);
+        if (targetMod) {
+          // Otimização de concorrência: Grava APENAS o campeonato que foi de fato modificado
+          await salvarCampeonato(eventID, targetMod, updated[targetMod]);
+        } else {
+          // Gravação geral (ex: restauração de backup completo)
+          await salvarCampeonato(eventID, 'clube', updated.clube);
+          await salvarCampeonato(eventID, 'equipe', updated.equipe);
+          await salvarCampeonato(eventID, 'estado', updated.estado);
+        }
       } catch (err) {
         console.error("Erro ao sincronizar com o Firebase:", err);
       }
@@ -153,26 +187,26 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
   const setTermo = (val: string) => {
     const next = { ...campeonatos };
     next[modalidade].config.termo = val;
-    saveState(next);
+    saveState(next, modalidade);
   };
 
   const toggleTrava = () => {
     const next = { ...campeonatos };
     next[modalidade].config.travado = !next[modalidade].config.travado;
-    saveState(next);
+    saveState(next, modalidade);
   };
 
   // Alterar tabela de pontuações
   const setPontoValue = (posicao: number, valor: number) => {
     const next = { ...campeonatos };
     next[modalidade].pontos[posicao] = valor;
-    saveState(next);
+    saveState(next, modalidade);
   };
 
   const setParticipacaoValue = (valor: number) => {
     const next = { ...campeonatos };
     next[modalidade].pontos.participacao = valor;
-    saveState(next);
+    saveState(next, modalidade);
   };
 
   // Manipulação de Categorias
@@ -186,7 +220,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
     }
     const next = { ...campeonatos };
     next[modalidade].categorias.push(clean);
-    saveState(next);
+    saveState(next, modalidade);
     setNovaCat('');
   };
 
@@ -194,7 +228,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
     if (confirm(`Tem certeza que deseja remover a categoria "${catName}"?`)) {
       const next = { ...campeonatos };
       next[modalidade].categorias = next[modalidade].categorias.filter(c => c !== catName);
-      saveState(next);
+      saveState(next, modalidade);
     }
   };
 
@@ -205,7 +239,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
     const temp = arr[idx];
     arr[idx] = arr[idx + direcao];
     arr[idx + direcao] = temp;
-    saveState(next);
+    saveState(next, modalidade);
   };
 
   // Cadastro de Pilotos / Inscrição
@@ -250,7 +284,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
 
     const next = { ...campeonatos };
     next[modalidade].atletas.push(novoAtleta);
-    saveState(next);
+    saveState(next, modalidade);
 
     // Reset formulário
     setAtletaNome('');
@@ -261,7 +295,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
     if (confirm("Deseja realmente excluir este piloto do campeonato?")) {
       const next = { ...campeonatos };
       next[modalidade].atletas = next[modalidade].atletas.filter(a => a.id !== id);
-      saveState(next);
+      saveState(next, modalidade);
     }
   };
 
@@ -272,7 +306,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
     if (atleta) {
       // @ts-ignore
       atleta[fase] = posicao;
-      saveState(next);
+      saveState(next, modalidade);
     }
   };
 
@@ -546,12 +580,12 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
           onClick={() => { setModalidade('equipe'); }}
           className={`flex items-center justify-between p-4 rounded-2xl border transition-all duration-300 text-left cursor-pointer ${
             modalidade === 'equipe' 
-              ? 'bg-gradient-to-r from-blue-900 to-indigo-900 border-blue-500 shadow-lg text-white scale-[1.02]' 
+              ? 'bg-gradient-to-r from-emerald-950 to-emerald-900/60 border-emerald-500 shadow-lg text-white scale-[1.02] shadow-emerald-950/40' 
               : 'bg-slate-900 border-slate-850 hover:bg-slate-850 text-slate-400'
           }`}
         >
           <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl ${modalidade === 'equipe' ? 'bg-blue-500 text-white' : 'bg-slate-950 text-slate-500'}`}>
+            <div className={`p-2.5 rounded-xl ${modalidade === 'equipe' ? 'bg-emerald-500 text-slate-950 font-black' : 'bg-slate-950 text-slate-500'}`}>
               <Users className="w-5 h-5" />
             </div>
             <div>
@@ -559,7 +593,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
               <h4 className="font-bold text-sm text-white">Campeonato por EQUIPE</h4>
             </div>
           </div>
-          <span className="text-xs font-mono font-bold bg-slate-950/50 px-2.5 py-1 rounded-lg text-blue-400">
+          <span className="text-xs font-mono font-bold bg-slate-950/50 px-2.5 py-1 rounded-lg text-emerald-400">
             {campeonatos.equipe.atletas.length} Atletas
           </span>
         </button>
@@ -568,12 +602,12 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
           onClick={() => { setModalidade('clube'); }}
           className={`flex items-center justify-between p-4 rounded-2xl border transition-all duration-300 text-left cursor-pointer ${
             modalidade === 'clube' 
-              ? 'bg-gradient-to-r from-emerald-900 to-teal-900 border-emerald-500 shadow-lg text-white scale-[1.02]' 
+              ? 'bg-gradient-to-r from-yellow-950 to-yellow-900/40 border-yellow-500 shadow-lg text-white scale-[1.02] shadow-yellow-950/40' 
               : 'bg-slate-900 border-slate-850 hover:bg-slate-850 text-slate-400'
           }`}
         >
           <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl ${modalidade === 'clube' ? 'bg-emerald-500 text-white' : 'bg-slate-950 text-slate-500'}`}>
+            <div className={`p-2.5 rounded-xl ${modalidade === 'clube' ? 'bg-yellow-500 text-slate-950 font-black' : 'bg-slate-950 text-slate-500'}`}>
               <Building className="w-5 h-5" />
             </div>
             <div>
@@ -581,7 +615,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
               <h4 className="font-bold text-sm text-white">Campeonato por CLUBE</h4>
             </div>
           </div>
-          <span className="text-xs font-mono font-bold bg-slate-950/50 px-2.5 py-1 rounded-lg text-emerald-400">
+          <span className="text-xs font-mono font-bold bg-slate-950/50 px-2.5 py-1 rounded-lg text-yellow-400">
             {campeonatos.clube.atletas.length} Atletas
           </span>
         </button>
@@ -590,12 +624,12 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
           onClick={() => { setModalidade('estado'); }}
           className={`flex items-center justify-between p-4 rounded-2xl border transition-all duration-300 text-left cursor-pointer ${
             modalidade === 'estado' 
-              ? 'bg-gradient-to-r from-amber-900 to-orange-950 border-amber-500 shadow-lg text-white scale-[1.02]' 
+              ? 'bg-gradient-to-r from-blue-950 to-blue-900/60 border-blue-500 shadow-lg text-white scale-[1.02] shadow-blue-950/40' 
               : 'bg-slate-900 border-slate-850 hover:bg-slate-850 text-slate-400'
           }`}
         >
           <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl ${modalidade === 'estado' ? 'bg-amber-500 text-white' : 'bg-slate-950 text-slate-500'}`}>
+            <div className={`p-2.5 rounded-xl ${modalidade === 'estado' ? 'bg-blue-500 text-white' : 'bg-slate-950 text-slate-500'}`}>
               <Map className="w-5 h-5" />
             </div>
             <div>
@@ -603,7 +637,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
               <h4 className="font-bold text-sm text-white">Campeonato por ESTADO</h4>
             </div>
           </div>
-          <span className="text-xs font-mono font-bold bg-slate-950/50 px-2.5 py-1 rounded-lg text-amber-400">
+          <span className="text-xs font-mono font-bold bg-slate-950/50 px-2.5 py-1 rounded-lg text-blue-400">
             {campeonatos.estado.atletas.length} Atletas
           </span>
         </button>
@@ -612,7 +646,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
       {/* PAINEL DE LINKS DE TRANSMISSÃO EM TEMPO REAL */}
       <div className="bg-slate-900/60 border border-slate-850 p-4 rounded-2xl mb-6">
         <h4 className="text-xs font-black uppercase text-slate-400 flex items-center gap-1.5 mb-3 font-display">
-          <Link2 className="w-4 h-4 text-yellow-500" />
+          <Link2 className="w-4 h-4 text-emerald-500" />
           Links de Transmissão ao Vivo para Espectadores (Direcionados):
         </h4>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
@@ -628,7 +662,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
               </div>
               <button 
                 onClick={() => handleCopyLink(mod)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-2 rounded-lg transition shrink-0"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 p-2 rounded-lg transition shrink-0 cursor-pointer"
               >
                 {copiedLink === mod ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
               </button>
@@ -639,18 +673,18 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
 
       {/* ABAS DA MODALIDADE SELECIONADA */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-        <div className="flex border-b border-slate-800 overflow-x-auto bg-slate-900/80 sticky top-0 z-10">
+        <div className="flex border-b border-slate-800 overflow-x-auto bg-slate-900/80 sticky top-0 z-10 scrollbar-none">
           <button 
             onClick={() => setActiveTab('config')}
-            className={`flex-1 py-4 text-xs font-black uppercase tracking-wider border-b-2 text-center whitespace-nowrap transition cursor-pointer ${
-              activeTab === 'config' ? 'border-yellow-500 text-yellow-400 bg-slate-850/40' : 'border-transparent text-slate-400 hover:text-slate-300'
+            className={`flex-1 py-4 px-3 text-xs font-black uppercase tracking-wider border-b-2 text-center whitespace-nowrap transition cursor-pointer ${
+              activeTab === 'config' ? 'border-emerald-500 text-emerald-400 bg-slate-850/40' : 'border-transparent text-slate-400 hover:text-slate-300'
             }`}
           >
             1. CONFIG ({currentData.config.termo})
           </button>
           <button 
             onClick={() => setActiveTab('registro')}
-            className={`flex-1 py-4 text-xs font-black uppercase tracking-wider border-b-2 text-center whitespace-nowrap transition cursor-pointer ${
+            className={`flex-1 py-4 px-3 text-xs font-black uppercase tracking-wider border-b-2 text-center whitespace-nowrap transition cursor-pointer ${
               activeTab === 'registro' ? 'border-yellow-500 text-yellow-400 bg-slate-850/40' : 'border-transparent text-slate-400 hover:text-slate-300'
             }`}
           >
@@ -658,15 +692,15 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
           </button>
           <button 
             onClick={() => setActiveTab('competicao')}
-            className={`flex-1 py-4 text-xs font-black uppercase tracking-wider border-b-2 text-center whitespace-nowrap transition cursor-pointer ${
-              activeTab === 'competicao' ? 'border-yellow-500 text-yellow-400 bg-slate-850/40' : 'border-transparent text-slate-400 hover:text-slate-300'
+            className={`flex-1 py-4 px-3 text-xs font-black uppercase tracking-wider border-b-2 text-center whitespace-nowrap transition cursor-pointer ${
+              activeTab === 'competicao' ? 'border-blue-500 text-blue-400 bg-slate-850/40' : 'border-transparent text-slate-400 hover:text-slate-300'
             }`}
           >
             3. LANÇAMENTOS
           </button>
           <button 
             onClick={() => setActiveTab('ranking')}
-            className={`flex-1 py-4 text-xs font-black uppercase tracking-wider border-b-2 text-center whitespace-nowrap transition cursor-pointer ${
+            className={`flex-1 py-4 px-3 text-xs font-black uppercase tracking-wider border-b-2 text-center whitespace-nowrap transition cursor-pointer ${
               activeTab === 'ranking' ? 'border-yellow-500 text-yellow-400 bg-slate-850/40 animate-pulse' : 'border-transparent text-yellow-400/85 hover:text-yellow-400'
             }`}
           >
@@ -674,26 +708,26 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
           </button>
         </div>
 
-        <div className="p-6 bg-slate-950/20">
+        <div className="p-4 sm:p-6 bg-slate-950/20">
           {/* ABA 1: CONFIGURAÇÃO */}
           {activeTab === 'config' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* TERMINOLOGIA E PONTOS */}
-              <div className="bg-slate-900 p-6 rounded-2xl border border-slate-850 flex flex-col justify-between">
+              <div className="bg-slate-900 p-4 sm:p-6 rounded-2xl border border-slate-850 flex flex-col justify-between">
                 <div>
                   <h3 className="font-black text-white italic uppercase text-sm mb-4 font-display flex items-center gap-2">
-                    <Flag className="text-yellow-500 w-4 h-4" />
+                    <Flag className="text-emerald-500 w-4 h-4" />
                     Terminologia do Campeonato
                   </h3>
                   <p className="text-xs text-slate-400 mb-4">Escolha como quer chamar a entidade principal neste campeonato específico:</p>
-                  <div className="flex gap-2 mb-6">
+                  <div className="flex flex-wrap gap-2 mb-6">
                     {['EQUIPE', 'CLUBE', 'ESTADO', 'DELEGAÇÃO'].map(t => (
                       <button 
                         key={t}
                         onClick={() => setTermo(t)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold uppercase cursor-pointer ${
+                        className={`px-4 py-2 rounded-xl text-xs font-bold uppercase cursor-pointer transition ${
                           currentData.config.termo === t 
-                            ? 'bg-yellow-500 text-slate-950' 
+                            ? 'bg-gradient-to-r from-emerald-600 to-yellow-500 text-white' 
                             : 'bg-slate-950 text-slate-400 border border-slate-850 hover:bg-slate-800'
                         }`}
                       >
@@ -707,7 +741,7 @@ export default function AdminPanel({ eventID, setEventID, isOnline, setIsOnline 
                     Tabela de Pontos por Posição na Final
                   </h3>
                   <p className="text-xs text-slate-400 mb-4">Modifique os pontos atribuídos aos pilotos conforme as posições finais:</p>
-                  <div className="grid grid-cols-4 gap-3 mb-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 mb-4">
                     {[1, 2, 3, 4, 5, 6, 7, 8].map(i => (
                       <div key={i} className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-center">
                         <label className="text-[10px] font-bold text-slate-500 uppercase block mb-1">{i}º LUGAR</label>
