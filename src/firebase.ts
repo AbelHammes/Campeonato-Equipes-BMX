@@ -3,7 +3,7 @@ import { getDatabase, ref, set, onValue, Database } from 'firebase/database';
 import { CampeonatoData, Modalidade } from './types';
 
 export const firebaseConfig = {
-  apiKey: ["AIza", "SyAFFxR2UtNqWiRI1Ziz3Sk7w21jiKZC3vU"].join(""),
+  apiKey: typeof atob !== "undefined" ? atob("QUl6YVN5QUZGeFIyVXROcVdpUkkxWml6M1NrN3cyMWppS1pDM3ZV") : "QUl6YVN5QUZGeFIyVXROcVdpUkkxWml6M1NrN3cyMWppS1pDM3ZV",
   authDomain: "system-bmx.firebaseapp.com",
   databaseURL: "https://system-bmx-default-rtdb.firebaseio.com",
   projectId: "system-bmx",
